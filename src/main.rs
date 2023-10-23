@@ -156,6 +156,7 @@ fn sat(formula: CnfFormula) -> Satisfiable {
 
     loop {
         if let Some(literal) = decide(&assignment) {
+            level += 1;
             assignment[literal] = Some(literal.0.is_positive());
             implications.nodes.push(ImplicationNode {
                 literal,
@@ -164,7 +165,7 @@ fn sat(formula: CnfFormula) -> Satisfiable {
                 predecessor: 0, // self
             });
 
-            while boolean_constraint_propagation() == Conflict::Yes {
+            while boolean_constraint_propagation(&formula, level, &mut assignment, &mut implications) == Conflict::Yes {
                 if !resolve_conflict() {
                     return Satisfiable::No;
                 }
@@ -301,8 +302,39 @@ impl IndexMut<Literal> for Assignment {
 /// is used to keep track of the changes.
 ///
 /// Apply repeatedly the unit rule. Return false if a conflict is reached
-fn boolean_constraint_propagation() -> Conflict {
-    Conflict::No
+fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, assignment: &mut Assignment, implications: &mut ImplicationGraph) -> Conflict {
+    'outer: loop {
+        // check conflicts
+        for (clause_index, c) in formula.clauses().enumerate() {
+            match assignment.evaluate_clause(c) {
+                ClauseStatus::Satisfied => {}
+                ClauseStatus::Unsatisfied => {
+                    return Conflict::Yes;
+                }
+                ClauseStatus::Unit(literal) => {}
+                ClauseStatus::Unresolved => {}
+            }
+        }
+        // propagate
+        for (clause_index, c) in formula.clauses().enumerate() {
+            match assignment.evaluate_clause(c) {
+                ClauseStatus::Satisfied => {}
+                ClauseStatus::Unsatisfied => {}
+                ClauseStatus::Unit(literal) => {
+                    assignment[literal] = Some(literal.0.is_positive());
+                    implications.nodes.push(ImplicationNode {
+                        literal,
+                        level,
+                        antecedent: Antecedent::Clause(clause_index),
+                        predecessor: 0,
+                    });
+                    continue 'outer;
+                }
+                ClauseStatus::Unresolved => {}
+            }
+        }
+        break Conflict::No
+    }
 }
 
 /// Backtrack until no conflict occurs any more. Return false, if this is impossible
