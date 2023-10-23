@@ -159,7 +159,7 @@ fn sat(mut formula: CnfFormula) -> Satisfiable {
     loop {
         if let Some(literal) = decide(&assignment) {
             level += 1;
-            assignment[literal] = Some(literal.0.is_positive());
+            assignment[literal.variable()] = Some(literal.value());
             implications.nodes.push(ImplicationNode {
                 literal,
                 level,
@@ -181,15 +181,26 @@ fn sat(mut formula: CnfFormula) -> Satisfiable {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct Variable(NonZeroI32);
 
+impl Variable {
+    pub fn index(self) -> usize {
+        self.0.get().abs() as usize
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct Literal(NonZeroI32);
 
 impl Literal {
-    pub fn negate(self) -> Literal {
+    pub fn negated(self) -> Literal {
         Literal(-self.0)
     }
-    pub fn index(self) -> usize {
-        self.0.get().abs() as usize
+
+    pub fn variable(self) -> Variable {
+        Variable(self.0.abs())
+    }
+
+    pub fn value(self) -> bool {
+        self.0.is_positive()
     }
 }
 
@@ -269,7 +280,7 @@ impl Assignment {
         let mut unsat = 0;
         let mut unit = None;
         for &l in clause {
-            match self[l] {
+            match self[l.variable()] {
                 Some(b) => {
                     if b == l.0.is_positive() {
                         return ClauseStatus::Satisfied;
@@ -293,16 +304,16 @@ impl Assignment {
     }
 }
 
-impl Index<Literal> for Assignment {
+impl Index<Variable> for Assignment {
     type Output = Option<bool>;
 
-    fn index(&self, index: Literal) -> &Self::Output {
+    fn index(&self, index: Variable) -> &Self::Output {
         &self.values[index.index()]
     }
 }
 
-impl IndexMut<Literal> for Assignment {
-    fn index_mut(&mut self, index: Literal) -> &mut Self::Output {
+impl IndexMut<Variable> for Assignment {
+    fn index_mut(&mut self, index: Variable) -> &mut Self::Output {
         &mut self.values[index.index()]
     }
 }
@@ -315,23 +326,20 @@ impl IndexMut<Literal> for Assignment {
 fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, assignment: &mut Assignment, implications: &mut ImplicationGraph) -> Conflict {
     'outer: loop {
         // check conflicts
-        for (clause_index, c) in formula.clauses().enumerate() {
-            match assignment.evaluate_clause(c) {
-                ClauseStatus::Satisfied => {}
-                ClauseStatus::Unsatisfied => {
-                    return Conflict::Yes;
-                }
-                ClauseStatus::Unit(literal) => {}
-                ClauseStatus::Unresolved => {}
+        for c in formula.clauses() {
+            if let ClauseStatus::Unsatisfied = assignment.evaluate_clause(c) {
+                return Conflict::Yes;
             }
         }
         // propagate
         for (clause_index, c) in formula.clauses().enumerate() {
             match assignment.evaluate_clause(c) {
                 ClauseStatus::Satisfied => {}
-                ClauseStatus::Unsatisfied => {}
+                ClauseStatus::Unsatisfied => {
+                    unreachable!()
+                }
                 ClauseStatus::Unit(literal) => {
-                    assignment[literal] = Some(literal.0.is_positive());
+                    assignment[literal.variable()] = Some(literal.value());
                     implications.nodes.push(ImplicationNode {
                         literal,
                         level,
@@ -350,13 +358,13 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, assignment
 /// Backtrack until no conflict occurs any more. Return false, if this is impossible
 fn resolve_conflict(formula: &mut CnfFormula, assignment: &mut Assignment, implications: &mut ImplicationGraph, level: &mut usize) -> bool {
     while let Some(last) = implications.nodes.pop() {
-        assignment[last.literal] = None;
+        assignment[last.literal.variable()] = None;
         *level = last.level;
         match last.antecedent {
             Antecedent::Decision => {
-                formula.literals.push(last.literal.negate());
+                formula.literals.push(last.literal.negated());
                 for node in implications.nodes.iter().rev() {
-                    formula.literals.push(node.literal.negate());
+                    formula.literals.push(node.literal.negated());
                 }
                 formula.clauses.push(formula.literals.len());
                 return true;
