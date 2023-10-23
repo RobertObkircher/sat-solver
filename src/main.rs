@@ -1,4 +1,5 @@
 use std::num::{NonZeroI32, TryFromIntError};
+use std::ops::{Index, IndexMut};
 
 fn main() {
     println!("Hello, world!");
@@ -20,7 +21,7 @@ p cnf 2 4
 
 #[cfg(test)]
 mod tests {
-    use crate::{Literal, parse_dimacs_cnf, SAT_CNF};
+    use crate::{Literal, parse_dimacs_cnf, sat, SAT_CNF, UNSAT_CNF};
 
     #[test]
     fn parse_sat() {
@@ -29,18 +30,23 @@ mod tests {
         let clauses = result.clauses().collect::<Vec<&[Literal]>>();
         assert_eq!(clauses.len(), 2);
         assert_eq!(clauses[0], [Literal::try_from(1).unwrap()]);
-        assert_eq!(clauses[1], [Literal::try_from(-1).unwrap(), Literal::try_from(-2).unwrap(), Literal::try_from(3).unwrap()]);
+        assert_eq!(clauses[1], [Literal::try_from(-1).unwrap(), Literal::try_from(2).unwrap(), Literal::try_from(3).unwrap()]);
+
+        sat(result);
     }
 
+    #[test]
     fn parse_unsat() {
-        let result = parse_dimacs_cnf(SAT_CNF).unwrap();
+        let result = parse_dimacs_cnf(UNSAT_CNF).unwrap();
         assert!(result.comments.contains("Unsatisfiable"));
         let clauses = result.clauses().collect::<Vec<&[Literal]>>();
-        assert_eq!(clauses.len(), 2);
+        assert_eq!(clauses.len(), 4);
         assert_eq!(clauses[0], [Literal::try_from(1).unwrap()]);
         assert_eq!(clauses[1], [Literal::try_from(-1).unwrap()]);
         assert_eq!(clauses[2], [Literal::try_from(2).unwrap()]);
         assert_eq!(clauses[3], [Literal::try_from(-2).unwrap()]);
+
+        sat(result);
     }
 }
 
@@ -83,6 +89,7 @@ fn parse_dimacs_cnf(source: &str) -> Result<CnfFormula, String> {
     let mut literals = Vec::new();
     let mut clauses = Vec::with_capacity(n_clauses);
 
+    // parse literals
     for (i, line) in lines {
         if let Some(comment) = line.strip_prefix('c') {
             comments.push(comment);
@@ -108,6 +115,7 @@ fn parse_dimacs_cnf(source: &str) -> Result<CnfFormula, String> {
     } else {
         Ok(CnfFormula {
             comments: comments.join("\n"),
+            variable_count: n_variables as usize,
             literals,
             clauses,
         })
@@ -116,6 +124,7 @@ fn parse_dimacs_cnf(source: &str) -> Result<CnfFormula, String> {
 
 struct CnfFormula {
     comments: String,
+    variable_count: usize,
     literals: Vec<Literal>,
     clauses: Vec<usize>,
 }
@@ -140,10 +149,22 @@ enum Satisfiable {
     No,
 }
 
-fn sat() -> Satisfiable {
+fn sat(formula: CnfFormula) -> Satisfiable {
+    let mut assignment = Assignment::new(formula.variable_count);
+    let mut implications = ImplicationGraph { nodes: vec![] };
+    let mut level = 0;
+
     loop {
-        if let Some(_assignment) = decide() {
-            while BCP() == Conflict::Yes {
+        if let Some(literal) = decide(&assignment) {
+            assignment[literal] = Some(literal.0.is_positive());
+            implications.nodes.push(ImplicationNode {
+                literal,
+                level,
+                antecedent: Antecedent::Decision,
+                predecessor: 0, // self
+            });
+
+            while boolean_constraint_propagation() == Conflict::Yes {
                 if !resolve_conflict() {
                     return Satisfiable::No;
                 }
@@ -160,6 +181,12 @@ struct Variable(NonZeroI32);
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct Literal(NonZeroI32);
 
+impl Literal {
+    pub fn index(self) -> usize {
+        self.0.get().abs() as usize
+    }
+}
+
 impl TryFrom<i32> for Literal {
     type Error = TryFromIntError;
 
@@ -169,7 +196,13 @@ impl TryFrom<i32> for Literal {
 }
 
 /// Choose next variable and value. Return `None` if all variables are assigned.
-fn decide() -> Option<Literal> {
+fn decide(x: &Assignment) -> Option<Literal> {
+    for (i, value) in x.values.iter().enumerate() {
+        if i == 0 { continue; }
+        if value.is_none() {
+            return Some(Literal::try_from(i32::try_from(i).unwrap()).unwrap());
+        }
+    }
     None
 }
 
@@ -179,8 +212,96 @@ enum Conflict {
     No,
 }
 
+/// A labeled directed acyclic graph G = (V, E), where:
+/// - each node has a label l@d for a literal l
+/// - E = {(v_i, v_j)}, directed to v_j, labeled with Antecedent(v_j)
+/// - In case G is a conflict graph, it also contains a single conflict
+//    node with incoming edges labeled with clause c.
+struct ImplicationGraph {
+    nodes: Vec<ImplicationNode>,
+}
+
+struct ImplicationNode {
+    literal: Literal,
+    level: usize,
+    // Could this be moved into Antecedent::Decision()?
+    antecedent: Antecedent,
+    predecessor: usize,
+}
+
+enum Antecedent {
+    Decision,
+    Clause(usize),
+}
+
+struct Assignment {
+    values: Vec<Option<bool>>,
+}
+
+impl Assignment {
+    pub fn new(count: usize) -> Self {
+        Self {
+            values: vec![None; count + 1],
+        }
+    }
+}
+
+/// Under a (partial) assignment, a clause can be
+enum ClauseStatus {
+    /// at least one of its literals is assigned to true,
+    Satisfied,
+    /// all its literals are assigned to false
+    Unsatisfied,
+    /// all but one of its literals are assigned to false
+    Unit(Literal),
+    /// otherwise
+    Unresolved,
+}
+
+impl Assignment {
+    pub fn evaluate_clause(&self, clause: &[Literal]) -> ClauseStatus {
+        let mut unsat = 0;
+        let mut unit = None;
+        for &l in clause {
+            match self[l] {
+                Some(true) => return ClauseStatus::Satisfied,
+                Some(false) => unsat += 1,
+                None => {
+                    unit = Some(l)
+                }
+            }
+        }
+
+        if clause.len() == unsat {
+            ClauseStatus::Unsatisfied
+        } else if clause.len() == unsat + 1 {
+            ClauseStatus::Unit(unit.unwrap())
+        } else {
+            ClauseStatus::Unresolved
+        }
+    }
+}
+
+impl Index<Literal> for Assignment {
+    type Output = Option<bool>;
+
+    fn index(&self, index: Literal) -> &Self::Output {
+        &self.values[index.index()]
+    }
+}
+
+impl IndexMut<Literal> for Assignment {
+    fn index_mut(&mut self, index: Literal) -> &mut Self::Output {
+        &mut self.values[index.index()]
+    }
+}
+
+/// Propagate consequences (implications) of a decision through the formula,
+/// thereby changing the status of clauses. The implication graph
+/// is used to keep track of the changes.
+///
 /// Apply repeatedly the unit rule. Return false if a conflict is reached
-fn BCP() -> Conflict {
+fn boolean_constraint_propagation() -> Conflict {
     Conflict::No
 }
 
