@@ -21,7 +21,7 @@ p cnf 2 4
 
 #[cfg(test)]
 mod tests {
-    use crate::{Literal, parse_dimacs_cnf, sat, SAT_CNF, UNSAT_CNF};
+    use crate::{Literal, parse_dimacs_cnf, sat, SAT_CNF, Satisfiable, UNSAT_CNF};
 
     #[test]
     fn parse_sat() {
@@ -32,7 +32,8 @@ mod tests {
         assert_eq!(clauses[0], [Literal::try_from(1).unwrap()]);
         assert_eq!(clauses[1], [Literal::try_from(-1).unwrap(), Literal::try_from(2).unwrap(), Literal::try_from(3).unwrap()]);
 
-        sat(result);
+        let result = sat(result);
+        assert_eq!(result, Satisfiable::Yes);
     }
 
     #[test]
@@ -46,7 +47,8 @@ mod tests {
         assert_eq!(clauses[2], [Literal::try_from(2).unwrap()]);
         assert_eq!(clauses[3], [Literal::try_from(-2).unwrap()]);
 
-        sat(result);
+        let result = sat(result);
+        assert_eq!(result, Satisfiable::No);
     }
 }
 
@@ -149,7 +151,7 @@ enum Satisfiable {
     No,
 }
 
-fn sat(formula: CnfFormula) -> Satisfiable {
+fn sat(mut formula: CnfFormula) -> Satisfiable {
     let mut assignment = Assignment::new(formula.variable_count);
     let mut implications = ImplicationGraph { nodes: vec![] };
     let mut level = 0;
@@ -166,7 +168,7 @@ fn sat(formula: CnfFormula) -> Satisfiable {
             });
 
             while boolean_constraint_propagation(&formula, level, &mut assignment, &mut implications) == Conflict::Yes {
-                if !resolve_conflict() {
+                if !resolve_conflict(&mut formula, &mut assignment, &mut implications, &mut level) {
                     return Satisfiable::No;
                 }
             }
@@ -183,6 +185,9 @@ struct Variable(NonZeroI32);
 struct Literal(NonZeroI32);
 
 impl Literal {
+    pub fn negate(self) -> Literal {
+        Literal(-self.0)
+    }
     pub fn index(self) -> usize {
         self.0.get().abs() as usize
     }
@@ -265,8 +270,13 @@ impl Assignment {
         let mut unit = None;
         for &l in clause {
             match self[l] {
-                Some(true) => return ClauseStatus::Satisfied,
-                Some(false) => unsat += 1,
+                Some(b) => {
+                    if b == l.0.is_positive() {
+                        return ClauseStatus::Satisfied;
+                    } else {
+                        unsat += 1;
+                    }
+                }
                 None => {
                     unit = Some(l)
                 }
@@ -333,11 +343,26 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, assignment
                 ClauseStatus::Unresolved => {}
             }
         }
-        break Conflict::No
+        break Conflict::No;
     }
 }
 
 /// Backtrack until no conflict occurs any more. Return false, if this is impossible
-fn resolve_conflict() -> bool {
+fn resolve_conflict(formula: &mut CnfFormula, assignment: &mut Assignment, implications: &mut ImplicationGraph, level: &mut usize) -> bool {
+    while let Some(last) = implications.nodes.pop() {
+        assignment[last.literal] = None;
+        *level = last.level;
+        match last.antecedent {
+            Antecedent::Decision => {
+                formula.literals.push(last.literal.negate());
+                for node in implications.nodes.iter().rev() {
+                    formula.literals.push(node.literal.negate());
+                }
+                formula.clauses.push(formula.literals.len());
+                return true;
+            }
+            Antecedent::Clause(_) => {}
+        }
+    }
     false
 }
