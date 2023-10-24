@@ -119,7 +119,7 @@ impl ImplicationGraph {
                 second = level;
             }
         }
-        if max != second { Some(second) } else { None }
+        if max != second && second > 0 { Some(second) } else { None }
     }
 
     pub fn evaluate_clause(&self, clause: &[Literal]) -> ClauseStatus {
