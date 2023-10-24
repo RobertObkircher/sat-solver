@@ -97,8 +97,11 @@ impl ImplicationGraph {
         };
     }
 
+    /// Returns the index and the literal with the highest decision level.
+    /// Decision nodes are ignored, because the caller only resolves against the
+    /// others to make the clause asserting asserting on the current decision level.
     pub fn last_assigned_literal(&self, clause: &[Literal]) -> Option<(usize, Literal)> {
-        // TODO debug assert that we didn't filter anything larger
+        debug_assert!(clause.iter().all(|l| self.values[l.variable().index()].is_some()));
         clause.iter().cloned().enumerate()
             .filter(|(_, l)| self.nodes[l.variable().index()].antecedent.is_clause())
             .max_by_key(|(_, l)| self.nodes[l.variable().index()].level)
@@ -111,6 +114,7 @@ impl ImplicationGraph {
         let mut second = 0;
 
         for l in clause.iter() {
+            debug_assert!(self.values[l.variable().index()].is_some());
             let level = self.nodes[l.variable().index()].level;
             if level > max {
                 second = max;
@@ -267,7 +271,7 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
         return false; // TODO not sure about this but it fixes unsatisfiable tests
     }
 
-    // add-clause-to-databse
+    // add-clause-to-database
     for l in cl {
         formula.literals.push(l);
     }

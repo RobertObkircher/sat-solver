@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::fs;
+
 use crate::dimacs::parse_dimacs_cnf;
 use crate::formula::Literal;
 use crate::solver::{sat, Satisfiable};
@@ -70,7 +72,7 @@ fn slides_sat() {
 
 #[test]
 fn uf50_218() {
-    let dir = std::fs::read_dir("inputs/uf50-218").unwrap().for_each(|x| {
+    fs::read_dir("inputs/uf50-218").unwrap().for_each(|x| {
         let entry = x.unwrap();
         println!("{}", entry.file_name().to_string_lossy());
 
@@ -89,7 +91,7 @@ fn uf50_218() {
 
 #[test]
 fn uuf50_218() {
-    let dir = std::fs::read_dir("inputs/uuf50-218").unwrap().for_each(|x| {
+    fs::read_dir("inputs/uuf50-218").unwrap().for_each(|x| {
         let entry = x.unwrap();
         println!("{}", entry.file_name().to_string_lossy());
 
