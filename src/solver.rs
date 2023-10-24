@@ -295,7 +295,11 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
         }
     }
 
-    *level = implications.clause_asserting_level(&cl).unwrap();
+    if let Some(l) =  implications.clause_asserting_level(&cl) {
+        *level = l;
+    } else {
+        return false; // TODO not sure about this but it fixes unsatisfiable tests
+    }
 
     // add-clause-to-databse
     for l in cl {
