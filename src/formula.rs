@@ -48,7 +48,7 @@ pub struct CnfFormula {
 }
 
 impl CnfFormula {
-    fn get_clause(&self, index: usize) -> &[Literal] {
+    pub fn get_clause(&self, index: usize) -> &[Literal] {
         let start = if index > 0 { self.clauses[index - 1] } else { 0 };
         let end = self.clauses[index];
         return &self.literals[start..end];
