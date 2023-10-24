@@ -46,3 +46,24 @@ fn parse_unsat() {
     let result = sat(result);
     assert_eq!(result, Satisfiable::No);
 }
+
+const SLIDES_CNF: &str = "c Slides example
+p cnf 11 6
+10 -1 9 11 0
+10 -4 11 0
+10 -2 -3 11 0
+-4 5 10 0
+-4 6 11 0
+-5 -6 0
+";
+
+#[test]
+fn slides_sat() {
+    let result = parse_dimacs_cnf(SLIDES_CNF).unwrap();
+    assert!(result.comments.contains("Slides"));
+    let clauses = result.clauses().collect::<Vec<&[Literal]>>();
+    assert_eq!(clauses.len(), 6);
+
+    let result = sat(result);
+    assert_eq!(result, Satisfiable::Yes);
+}
