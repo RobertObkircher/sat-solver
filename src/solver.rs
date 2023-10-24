@@ -32,7 +32,6 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
             }
         }
     }
-    level += 1;
 
     loop {
         if let Some(literal) = decide(&implications) {
