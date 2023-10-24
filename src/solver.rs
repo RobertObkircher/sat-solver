@@ -108,8 +108,9 @@ impl ImplicationGraph {
     }
 
 
-    /// 2nd highest dl in cl
-    pub fn clause_asserting_level(&self, clause: &[Literal]) -> Option<usize> {
+    /// 2nd highest dl in an asserting clause
+    pub fn clause_asserting_level(&self, clause: &[Literal]) -> usize {
+        debug_assert!(!clause.is_empty(), "Expected asserting clause which must have at least one literal");
         let mut max = 0;
         let mut second = 0;
 
@@ -123,7 +124,13 @@ impl ImplicationGraph {
                 second = level;
             }
         }
-        if max != second && second > 0 { Some(second) } else { None }
+        if second > 0 {
+            second
+        } else {
+            // TODO look up why this works
+            assert!(max > 1);
+            max - 1
+        }
     }
 
     pub fn evaluate_clause(&self, clause: &[Literal]) -> ClauseStatus {
@@ -239,7 +246,8 @@ fn resolve_conflict(conflict_clause: usize, formula: &mut CnfFormula, implicatio
 
 /// Output: BT level and new conflict clause
 fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, formula: &mut CnfFormula, level: &mut usize) -> bool {
-    if *level == 1 {
+    debug_assert!(*level != 0);
+    if *level <= 1 {
         return false;
     }
 
@@ -265,11 +273,7 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
         }
     }
 
-    if let Some(l) = implications.clause_asserting_level(&cl) {
-        *level = l;
-    } else {
-        return false; // TODO not sure about this but it fixes unsatisfiable tests
-    }
+    *level = implications.clause_asserting_level(&cl);
 
     // add-clause-to-database
     for l in cl {
