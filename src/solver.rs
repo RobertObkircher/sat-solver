@@ -1,6 +1,4 @@
-use std::ops::{Index, IndexMut};
-
-use crate::formula::{CnfFormula, Literal, Variable};
+use crate::formula::{CnfFormula, Literal};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Satisfiable {
@@ -21,7 +19,7 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
     while change {
         change = false;
         for c in formula.clauses() {
-            match implications.assignment.evaluate_clause(c) {
+            match implications.evaluate_clause(c) {
                 ClauseStatus::Satisfied => {}
                 ClauseStatus::Unsatisfied => {
                     return Satisfiable::No;
@@ -37,7 +35,7 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
     level += 1;
 
     loop {
-        if let Some(literal) = decide(&implications.assignment) {
+        if let Some(literal) = decide(&implications) {
             level += 1;
             implications.add_node(literal, level, Antecedent::Decision);
 
@@ -53,7 +51,7 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
 }
 
 /// Choose next variable and value. Return `None` if all variables are assigned.
-fn decide(x: &Assignment) -> Option<Literal> {
+fn decide(x: &ImplicationGraph) -> Option<Literal> {
     for (i, value) in x.values.iter().enumerate() {
         if i == 0 { continue; }
         if value.is_none() {
@@ -75,14 +73,14 @@ enum Conflict {
 /// - In case G is a conflict graph, it also contains a single conflict
 //    node with incoming edges labeled with clause c.
 struct ImplicationGraph {
-    assignment: Assignment,
+    values: Vec<Option<bool>>,
     nodes: Vec<ImplicationNode>,
 }
 
 impl ImplicationGraph {
     fn new(variable_count: usize) -> Self {
         Self {
-            assignment: Assignment::new(variable_count),
+            values: vec![None; variable_count + 1],
             nodes: (0..(variable_count + 1)).map(|_| ImplicationNode {
                 level: 0,
                 antecedent: Antecedent::Decision,
@@ -91,9 +89,10 @@ impl ImplicationGraph {
     }
 
     pub fn add_node(&mut self, literal: Literal, level: usize, antecedent: Antecedent) {
-        debug_assert!(self.assignment[literal.variable()].is_none());
-        self.assignment[literal.variable()] = Some(literal.value());
-        self.nodes[literal.variable().index()] = ImplicationNode {
+        let index = literal.variable().index();
+        debug_assert!(self.values[index].is_none());
+        self.values[index] = Some(literal.value());
+        self.nodes[index] = ImplicationNode {
             level,
             antecedent,
         };
@@ -123,59 +122,12 @@ impl ImplicationGraph {
         }
         if max != second { Some(second) } else { None }
     }
-}
 
-struct ImplicationNode {
-    level: usize,
-    antecedent: Antecedent,
-}
-
-enum Antecedent {
-    Decision,
-    /// The actual edges are the other literals in the clause.
-    Clause(usize),
-}
-
-impl Antecedent {
-    pub fn is_clause(&self) -> bool {
-        match self {
-            Antecedent::Decision => false,
-            Antecedent::Clause(_) => true,
-        }
-    }
-}
-
-
-struct Assignment {
-    values: Vec<Option<bool>>,
-}
-
-impl Assignment {
-    pub fn new(count: usize) -> Self {
-        Self {
-            values: vec![None; count + 1],
-        }
-    }
-}
-
-/// Under a (partial) assignment, a clause can be
-enum ClauseStatus {
-    /// at least one of its literals is assigned to true,
-    Satisfied,
-    /// all its literals are assigned to false
-    Unsatisfied,
-    /// all but one of its literals are assigned to false
-    Unit(Literal),
-    /// otherwise
-    Unresolved,
-}
-
-impl Assignment {
     pub fn evaluate_clause(&self, clause: &[Literal]) -> ClauseStatus {
         let mut unsat = 0;
         let mut unit = None;
         for &l in clause {
-            match self[l.variable()] {
+            match self.values[l.variable().index()] {
                 Some(b) => {
                     if b == l.value() {
                         return ClauseStatus::Satisfied;
@@ -199,18 +151,36 @@ impl Assignment {
     }
 }
 
-impl Index<Variable> for Assignment {
-    type Output = Option<bool>;
+struct ImplicationNode {
+    level: usize,
+    antecedent: Antecedent,
+}
 
-    fn index(&self, index: Variable) -> &Self::Output {
-        &self.values[index.index()]
+enum Antecedent {
+    Decision,
+    /// The actual edges are the other literals in the clause.
+    Clause(usize),
+}
+
+impl Antecedent {
+    pub fn is_clause(&self) -> bool {
+        match self {
+            Antecedent::Decision => false,
+            Antecedent::Clause(_) => true,
+        }
     }
 }
 
-impl IndexMut<Variable> for Assignment {
-    fn index_mut(&mut self, index: Variable) -> &mut Self::Output {
-        &mut self.values[index.index()]
-    }
+/// Under a (partial) assignment, a clause can be
+enum ClauseStatus {
+    /// at least one of its literals is assigned to true,
+    Satisfied,
+    /// all its literals are assigned to false
+    Unsatisfied,
+    /// all but one of its literals are assigned to false
+    Unit(Literal),
+    /// otherwise
+    Unresolved,
 }
 
 /// Propagate consequences (implications) of a decision through the formula,
@@ -222,13 +192,13 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, implicatio
     'outer: loop {
         // check conflicts
         for (index, c) in formula.clauses().enumerate() {
-            if let ClauseStatus::Unsatisfied = implications.assignment.evaluate_clause(c) {
+            if let ClauseStatus::Unsatisfied = implications.evaluate_clause(c) {
                 return Conflict::Yes(index);
             }
         }
         // propagate
         for (clause_index, c) in formula.clauses().enumerate() {
-            match implications.assignment.evaluate_clause(c) {
+            match implications.evaluate_clause(c) {
                 ClauseStatus::Satisfied => {}
                 ClauseStatus::Unsatisfied => {
                     unreachable!()
@@ -251,7 +221,7 @@ fn resolve_conflict(conflict_clause: usize, formula: &mut CnfFormula, implicatio
         // TODO find a smarter way to do this (either during analyze_conflict or on maybe check level on each read
         for (i, node) in implications.nodes.iter().enumerate() {
             if node.level > *level {
-                implications.assignment.values[i] = None;
+                implications.values[i] = None;
             }
         }
         #[cfg(debug_assertions)]
