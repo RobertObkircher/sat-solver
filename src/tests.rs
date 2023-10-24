@@ -67,3 +67,41 @@ fn slides_sat() {
     let result = sat(result);
     assert_eq!(result, Satisfiable::Yes);
 }
+
+#[test]
+fn uf50_218() {
+    let dir = std::fs::read_dir("inputs/uf50-218").unwrap().for_each(|x| {
+        let entry = x.unwrap();
+        println!("{}", entry.file_name().to_string_lossy());
+
+        let contents = std::fs::read_to_string(entry.path()).unwrap();
+        // TODO figure out why the files from a website end with '%' and '0' as the last two lines.
+        let source = if let Some((start, _)) = contents.rsplit_once('%') {
+            start
+        } else {
+            &contents
+        };
+        let result = parse_dimacs_cnf(&source).unwrap();
+        let result = sat(result);
+        assert_eq!(result, Satisfiable::Yes);
+    });
+}
+
+#[test]
+fn uuf50_218() {
+    let dir = std::fs::read_dir("inputs/uuf50-218").unwrap().for_each(|x| {
+        let entry = x.unwrap();
+        println!("{}", entry.file_name().to_string_lossy());
+
+        let contents = std::fs::read_to_string(entry.path()).unwrap();
+        // TODO figure out why the files from a website end with '%' and '0' as the last two lines.
+        let source = if let Some((start, _)) = contents.rsplit_once('%') {
+            start
+        } else {
+            &contents
+        };
+        let result = parse_dimacs_cnf(&source).unwrap();
+        let result = sat(result);
+        assert_eq!(result, Satisfiable::No);
+    });
+}
