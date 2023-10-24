@@ -14,6 +14,9 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
     // 2 = first real decision
     let mut level = 1;
 
+    // VSIDS: Variable State Independent Decaying Sum
+    let mut vsids = vec![0u8; formula.variable_count + 1];
+
     // make "forced" decisions
     let mut change = true;
     while change {
@@ -34,11 +37,18 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
     }
 
     loop {
-        if let Some(literal) = decide(&implications) {
+        if let Some(literal) = decide(&implications, &vsids) {
             level += 1;
             implications.add_node(literal, level, Antecedent::Decision);
 
             while let Conflict::Yes(conflict_clause) = boolean_constraint_propagation(&formula, level, &mut implications) {
+                for l in formula.get_clause(conflict_clause) {
+                    if vsids[l.variable().index()] == 255 {
+                        // TODO does it matter that this isn't entirely fair?
+                        vsids.iter_mut().for_each(|it| *it /= 2);
+                    }
+                    vsids[l.variable().index()] += 1;
+                }
                 if !resolve_conflict(conflict_clause, &mut formula, &mut implications, &mut level) {
                     return Satisfiable::No;
                 }
@@ -50,14 +60,12 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
 }
 
 /// Choose next variable and value. Return `None` if all variables are assigned.
-fn decide(x: &ImplicationGraph) -> Option<Literal> {
-    for (i, value) in x.values.iter().enumerate() {
-        if i == 0 { continue; }
-        if value.is_none() {
-            return Some(Literal::try_from(i32::try_from(i).unwrap()).unwrap());
-        }
-    }
-    None
+fn decide(x: &ImplicationGraph, vsids: &[u8]) -> Option<Literal> {
+    x.values.iter().enumerate()
+        .skip(1)
+        .filter(|(_, value)| value.is_none())
+        .max_by_key(|(i, _)| vsids[*i])
+        .map(|(i, _)| Literal::try_from(i32::try_from(i).unwrap()).unwrap())
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -72,6 +80,7 @@ enum Conflict {
 /// - In case G is a conflict graph, it also contains a single conflict
 //    node with incoming edges labeled with clause c.
 struct ImplicationGraph {
+    // TODO pack two into one byte?
     values: Vec<Option<bool>>,
     nodes: Vec<ImplicationNode>,
 }
