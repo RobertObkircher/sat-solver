@@ -27,7 +27,7 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
                     return Satisfiable::No;
                 }
                 ClauseStatus::Unit(literal) => {
-                    implications.add_decision(literal, level);
+                    implications.add_node(literal, level, Antecedent::Decision);
                     change = true;
                 }
                 ClauseStatus::Unresolved => {}
@@ -39,7 +39,7 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
     loop {
         if let Some(literal) = decide(&implications.assignment) {
             level += 1;
-            implications.add_decision(literal, level);
+            implications.add_node(literal, level, Antecedent::Decision);
 
             while let Conflict::Yes(conflict_clause) = boolean_constraint_propagation(&formula, level, &mut implications) {
                 if !resolve_conflict(conflict_clause, &mut formula, &mut implications, &mut level) {
@@ -90,11 +90,12 @@ impl ImplicationGraph {
         }
     }
 
-    pub fn add_decision(&mut self, literal: Literal, level: usize) {
+    pub fn add_node(&mut self, literal: Literal, level: usize, antecedent: Antecedent) {
+        debug_assert!(self.assignment[literal.variable()].is_none());
         self.assignment[literal.variable()] = Some(literal.value());
         self.nodes[literal.variable().index()] = ImplicationNode {
             level,
-            antecedent: Antecedent::Decision,
+            antecedent,
         };
     }
 
@@ -233,11 +234,7 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, implicatio
                     unreachable!()
                 }
                 ClauseStatus::Unit(literal) => {
-                    implications.assignment[literal.variable()] = Some(literal.value());
-                    implications.nodes[literal.variable().index()] = ImplicationNode {
-                        level,
-                        antecedent: Antecedent::Clause(clause_index),
-                    };
+                    implications.add_node(literal, level, Antecedent::Clause(clause_index));
                     continue 'outer;
                 }
                 ClauseStatus::Unresolved => {}
@@ -295,7 +292,7 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
         }
     }
 
-    if let Some(l) =  implications.clause_asserting_level(&cl) {
+    if let Some(l) = implications.clause_asserting_level(&cl) {
         *level = l;
     } else {
         return false; // TODO not sure about this but it fixes unsatisfiable tests
