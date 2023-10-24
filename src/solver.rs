@@ -120,6 +120,12 @@ impl ImplicationGraph {
     /// 2nd highest dl in an asserting clause
     pub fn clause_asserting_level(&self, clause: &[Literal]) -> usize {
         debug_assert!(!clause.is_empty(), "Expected asserting clause which must have at least one literal");
+
+        if clause.len() == 1 {
+            debug_assert!(self.values[clause[0].variable().index()].is_some());
+            return 1;
+        }
+
         let mut max = 0;
         let mut second = 0;
 
@@ -133,13 +139,9 @@ impl ImplicationGraph {
                 second = level;
             }
         }
-        if second > 0 {
-            second
-        } else {
-            // TODO look up why this works
-            assert!(max > 1);
-            max - 1
-        }
+
+        debug_assert!(second > 0, "Asserting clauses have exactly one literal at the current level, so there must be another one at this point.");
+        second
     }
 
     pub fn evaluate_clause(&self, clause: &[Literal]) -> ClauseStatus {
