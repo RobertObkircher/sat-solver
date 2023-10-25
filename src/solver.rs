@@ -78,14 +78,10 @@ enum Conflict {
     No,
 }
 
-/// A labeled directed acyclic graph G = (V, E), where:
-/// - each node has a label l@d for a literal l
-/// - E = {(v_i, v_j)}, directed to v_j, labeled with Antecedent(v_j)
-/// - In case G is a conflict graph, it also contains a single conflict
-///    node with incoming edges labeled with clause c.
-///
 /// The data is essentially `Map<Variable, (Sign, Level, Antecedent)>`
 /// but it is split into two arrays for possibly better caching.
+///
+/// The edges are from the other variables in the `Antecedent`.
 struct ImplicationGraph {
     // TODO pack two into one byte?
     values: Vec<Option<bool>>,
