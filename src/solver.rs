@@ -36,6 +36,7 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
         }
     }
 
+    let mut conflicts = 0;
     loop {
         if let Some(literal) = decide(&implications, &vsids) {
             level += 1;
@@ -49,9 +50,18 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
                     }
                     vsids[l.variable().index()] += 1;
                 }
-                if !resolve_conflict(conflict_clause, &mut formula, &mut implications, &mut level) {
+                let from_level = level;
+                if !analyze_conflict(conflict_clause, &mut implications, &mut formula, &mut level) {
                     return Satisfiable::No;
                 }
+                conflicts += 1;
+                // TODO tune restart policy, guarantee different decision after restart
+                // restart for every power of two
+                // This reduced time for 100 p cnf 150  645 instances from 266 to 103 seconds
+                if conflicts & (conflicts - 1) == 0 {
+                    level = 1;
+                }
+                implications.backtrack(from_level, level);
             }
         } else {
             return Satisfiable::Yes;
@@ -182,6 +192,21 @@ impl ImplicationGraph {
             ClauseStatus::Unresolved
         }
     }
+
+    pub fn backtrack(&mut self, mut from: usize, to: usize) {
+        while from > to {
+            let next = self.backtrack_stack.pop().unwrap();
+            debug_assert_eq!(self.nodes[next.variable().index()].level, from);
+            if next.value() {
+                from -= 1;
+            }
+            self.values[next.variable().index()] = None;
+            #[cfg(debug_assertions)]
+            {
+                self.nodes[next.variable().index()].level = 0;
+            }
+        }
+    }
 }
 
 struct ImplicationNode {
@@ -246,27 +271,6 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, implicatio
             if break_after_index == index { return Conflict::No; }
         }
     }
-}
-
-/// Backtrack until no conflict occurs any more. Return false, if this is impossible
-fn resolve_conflict(conflict_clause: usize, formula: &mut CnfFormula, implications: &mut ImplicationGraph, level: &mut usize) -> bool {
-    let mut decision_level = *level;
-    let result = analyze_conflict(conflict_clause, implications, formula, level);
-    if result {
-        while decision_level > *level {
-            let next = implications.backtrack_stack.pop().unwrap();
-            debug_assert_eq!(implications.nodes[next.variable().index()].level, decision_level);
-            if next.value() {
-                decision_level -= 1;
-            }
-            implications.values[next.variable().index()] = None;
-            #[cfg(debug_assertions)]
-            {
-                implications.nodes[next.variable().index()].level = 0;
-            }
-        }
-    }
-    result
 }
 
 /// Output: BT level and new conflict clause
