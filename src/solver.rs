@@ -10,9 +10,9 @@ pub enum Satisfiable {
 pub fn sat(mut formula: CnfFormula) -> Satisfiable {
     let mut implications = ImplicationGraph::new(formula.variable_count);
     // 0 = uninitialized
-    // 1 = "forced" decisions
+    // 1 = "forced" initial decisions
     // 2 = first real decision
-    let mut level = 1;
+    let mut level = 1u32; // u32 is enough because there at most one level per variable
 
     // make initial decisions
     for c in formula.clauses().filter(|it| it.len() == 1) {
@@ -107,7 +107,7 @@ impl ImplicationGraph {
         }
     }
 
-    pub fn add_node(&mut self, literal: Literal, level: usize, antecedent: Antecedent) {
+    pub fn add_node(&mut self, literal: Literal, level: u32, antecedent: Antecedent) {
         let index = literal.variable().index();
         debug_assert!(self.values[index].is_none());
         self.values[index] = Some(literal.value());
@@ -130,7 +130,7 @@ impl ImplicationGraph {
 
 
     /// 2nd highest dl in an asserting clause
-    pub fn clause_asserting_level(&self, clause: &[Literal]) -> usize {
+    pub fn clause_asserting_level(&self, clause: &[Literal]) -> u32 {
         debug_assert!(!clause.is_empty(), "Expected asserting clause which must have at least one literal");
 
         if clause.len() == 1 {
@@ -183,7 +183,7 @@ impl ImplicationGraph {
         }
     }
 
-    pub fn backtrack(&mut self, mut from: usize, to: usize) {
+    pub fn backtrack(&mut self, mut from: u32, to: u32) {
         while from > to {
             let next = self.backtrack_stack.pop().unwrap();
             debug_assert_eq!(self.nodes[next.variable().index()].level, from);
@@ -200,8 +200,8 @@ impl ImplicationGraph {
 }
 
 struct ImplicationNode {
-    level: usize,
     antecedent: Antecedent,
+    level: u32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -237,7 +237,7 @@ enum ClauseStatus {
 /// is used to keep track of the changes.
 ///
 /// Apply repeatedly the unit rule. Return false if a conflict is reached
-fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, implications: &mut ImplicationGraph) -> Conflict {
+fn boolean_constraint_propagation(formula: &CnfFormula, level: u32, implications: &mut ImplicationGraph) -> Conflict {
     let mut break_after_index = 0;
     // NOTE: Previously we eagerly checked all clauses for conflicts before any unit propagation.
     //       This version is much faster (4x on p cnf 50  218), despite potentially causing multiple conflicts.
@@ -264,7 +264,7 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, implicatio
 }
 
 /// Output: BT level and new conflict clause
-fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, formula: &mut CnfFormula, level: &mut usize) -> bool {
+fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, formula: &mut CnfFormula, level: &mut u32) -> bool {
     debug_assert!(*level != 0);
     if *level <= 1 {
         return false;
@@ -304,7 +304,7 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
 }
 
 /// An asserting clause (AC) is a conflict clause with a single literal from the current decision level.
-fn is_asserting(clause: &[Literal], implications: &ImplicationGraph, level: usize) -> bool {
+fn is_asserting(clause: &[Literal], implications: &ImplicationGraph, level: u32) -> bool {
     let mut found = false;
     for l in clause {
         if implications.nodes[l.variable().index()].level == level {
