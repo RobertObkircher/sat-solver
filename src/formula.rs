@@ -1,5 +1,5 @@
 use std::iter::FusedIterator;
-use std::num::{NonZeroI32, TryFromIntError};
+use std::num::NonZeroI32;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Variable(NonZeroI32);
@@ -31,17 +31,12 @@ impl Literal {
     }
 }
 
-impl From<NonZeroI32> for Literal {
-    fn from(value: NonZeroI32) -> Self {
-        Self(value)
-    }
-}
-
 impl TryFrom<i32> for Literal {
-    type Error = TryFromIntError;
+    type Error = ();
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        value.try_into().map(Literal)
+        if value == i32::MIN { return Err(()); }
+        value.try_into().map(Literal).map_err(|_| ())
     }
 }
 

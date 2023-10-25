@@ -54,7 +54,7 @@ pub fn parse_dimacs_cnf(source: &str) -> Result<CnfFormula, String> {
                     if nr.get().abs() > n_variables {
                         return Err(format!("Line {}: Variable '{}' is larger than indicated in the header", i + 1, nr.get()));
                     }
-                    literals.push(Literal::from(nr));
+                    literals.push(Literal::try_from(nr.get()).unwrap());
                 } else {
                     clauses.push(literals.len());
                 }
