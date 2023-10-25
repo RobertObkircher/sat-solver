@@ -1,3 +1,4 @@
+use std::iter::FusedIterator;
 use std::num::{NonZeroI32, TryFromIntError};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -60,7 +61,7 @@ impl CnfFormula {
 }
 
 impl CnfFormula {
-    pub fn clauses(&self) -> impl Iterator<Item=&[Literal]> {
+    pub fn clauses(&self) -> impl Iterator<Item=&[Literal]> + DoubleEndedIterator + ExactSizeIterator + FusedIterator {
         (0..self.clauses.len()).map(|c| self.get_clause(c))
     }
 }

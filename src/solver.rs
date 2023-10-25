@@ -223,12 +223,14 @@ enum ClauseStatus {
 ///
 /// Apply repeatedly the unit rule. Return false if a conflict is reached
 fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, implications: &mut ImplicationGraph) -> Conflict {
-    let mut break_after_index = formula.clauses.len().wrapping_sub(1);
+    let mut break_after_index = 0;
     // NOTE: Previously we eagerly checked all clauses for conflicts before any unit propagation.
     //       This version is much faster (4x on p cnf 50  218), despite potentially causing multiple conflicts.
+    //       Visiting them in reverse order, to immediately try learned clauses after backtracking,
+    //       also made small instances faster, but it slightly slowed down p cnf 150  645.
     // TODO: although not covered in the course, something like 2-watched literals could make this even faster
     loop {
-        for (index, c) in formula.clauses().enumerate() {
+        for (index, c) in formula.clauses().enumerate().rev() {
             match implications.evaluate_clause(c) {
                 ClauseStatus::Satisfied => {}
                 ClauseStatus::Unsatisfied => {
