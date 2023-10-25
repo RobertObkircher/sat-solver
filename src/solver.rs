@@ -14,27 +14,21 @@ pub fn sat(mut formula: CnfFormula) -> Satisfiable {
     // 2 = first real decision
     let mut level = 1;
 
-    // VSIDS: Variable State Independent Decaying Sum
-    let mut vsids = vec![0u8; formula.variable_count + 1];
-
-    // make "forced" decisions
-    let mut change = true;
-    while change {
-        change = false;
-        for c in formula.clauses() {
-            match implications.evaluate_clause(c) {
-                ClauseStatus::Satisfied => {}
-                ClauseStatus::Unsatisfied => {
-                    return Satisfiable::No;
-                }
-                ClauseStatus::Unit(literal) => {
-                    implications.add_node(literal, level, Antecedent::Decision);
-                    change = true;
-                }
-                ClauseStatus::Unresolved => {}
-            }
+    // make initial decisions
+    for c in formula.clauses().filter(|it| it.len() == 1) {
+        if implications.values[c[0].variable().index()] == Some(c[0].negated().value()) {
+            return Satisfiable::No;
+        }
+        implications.add_node(c[0], level, Antecedent::Decision);
+    }
+    if !implications.backtrack_stack.is_empty() {
+        if let Conflict::Yes(_) = boolean_constraint_propagation(&formula, level, &mut implications) {
+            return Satisfiable::No;
         }
     }
+
+    // VSIDS: Variable State Independent Decaying Sum
+    let mut vsids = vec![0u8; formula.variable_count + 1];
 
     let mut conflicts = 0;
     loop {
