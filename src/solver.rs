@@ -101,7 +101,8 @@ impl ImplicationGraph {
             values: vec![None; variable_count + 1],
             nodes: (0..(variable_count + 1)).map(|_| ImplicationNode {
                 level: 0,
-                antecedent: Antecedent::Decision,
+                from_clause: false,
+                clause: 0,
             }).collect(),
             backtrack_stack: Vec::with_capacity(variable_count),
         }
@@ -111,9 +112,18 @@ impl ImplicationGraph {
         let index = literal.variable().index();
         debug_assert!(self.values[index].is_none());
         self.values[index] = Some(literal.value());
-        self.nodes[index] = ImplicationNode {
-            level,
-            antecedent,
+        self.nodes[index] = if let Antecedent::Clause(clause) = antecedent {
+            ImplicationNode {
+                level,
+                from_clause: true,
+                clause,
+            }
+        } else {
+            ImplicationNode {
+                level,
+                from_clause: false,
+                clause: 0,
+            }
         };
         self.backtrack_stack.push(literal.variable().literal(matches!(antecedent, Antecedent::Decision)));
     }
@@ -124,7 +134,7 @@ impl ImplicationGraph {
     pub fn last_assigned_literal(&self, clause: &[Literal]) -> Option<(usize, Literal)> {
         debug_assert!(clause.iter().all(|l| self.values[l.variable().index()].is_some()));
         clause.iter().cloned().enumerate()
-            .filter(|(_, l)| self.nodes[l.variable().index()].antecedent.is_clause())
+            .filter(|(_, l)| self.nodes[l.variable().index()].from_clause)
             .max_by_key(|(_, l)| self.nodes[l.variable().index()].level)
     }
 
@@ -199,9 +209,17 @@ impl ImplicationGraph {
     }
 }
 
+const _: [u8; 16] = [0; std::mem::size_of::<ImplicationNode>()];
+
+/// Memory optimization:
+/// For some reason the size is 24 bytes if `ImplicationNode` contains `Antecedent`.
+/// Reducing it to 16 with `usize`+`bool` initially made runtime worse
+/// (103 -> 107 seconds on 100*`p cnf 150  645`) but adding repr(C) improved it to 101 s.
+#[repr(C)]
 struct ImplicationNode {
-    antecedent: Antecedent,
     level: u32,
+    from_clause: bool,
+    clause: usize,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -209,15 +227,6 @@ enum Antecedent {
     Decision,
     /// The actual edges are the other literals in the clause.
     Clause(usize),
-}
-
-impl Antecedent {
-    pub fn is_clause(&self) -> bool {
-        match self {
-            Antecedent::Decision => false,
-            Antecedent::Clause(_) => true,
-        }
-    }
 }
 
 /// Under a (partial) assignment, a clause can be
@@ -275,10 +284,8 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
         let (i, lit) = implications.last_assigned_literal(&cl).unwrap();
         let var = lit.variable();
         debug_assert_eq!(implications.nodes[var.index()].level, *level);
-        let ante = match &implications.nodes[var.index()].antecedent {
-            Antecedent::Decision => unreachable!(),
-            Antecedent::Clause(i) => *i,
-        };
+        debug_assert!(implications.nodes[var.index()].from_clause);
+        let ante = implications.nodes[var.index()].clause;
         // cl := Resolve(cl, ante, var)
         let removed = cl.swap_remove(i);
         debug_assert_eq!(lit, removed);
