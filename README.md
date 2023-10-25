@@ -1,44 +1,68 @@
 # sat-solver
 
-A simple SAT solver based on the lecture slides from `185.A93 Formal Methods in Computer Science` at TU Wien.
+A simple SAT solver based on the lecture `185.A93 Formal Methods in Computer Science` at TU Wien.
 
 # benchmark
 
-- The files were from https://www.cs.ubc.ca/~hoos/SATLIB/benchm.html, but 
-for some reason they had `%`, `0`, and a bunch of newlines at the end, 
+- The input files were from https://www.cs.ubc.ca/~hoos/SATLIB/benchm.html, but 
+for some reason they had `%`, `0`, and a newline at the end, 
 which I removed with `for f in *.cnf; do head -n -3 "$f" > "${f}2"; done; rm *.cnf`.
-- 1000 instances, 50 variables, 218 clauses
-- WARNING: each run only takes ~5 milliseconds, so the measured time might be mostly startup overhead
-- The performance seems to be somewhat similar to `minisat`
+- script: `./benchmark.sh`
+- On small instances, the performance is similar to `minisat`, but on larger ones we are much slower:
 
-1000 instances, 50 variables, 218 clauses, all SAT
+Uniform Random-3-SAT: 50 variables, 218 clauses - 1000 instances, all SAT
 ```
-robert@robert-7590:~/dev/sat-solver$ hyperfine 'for f in inputs/uf50-218/*.cnf2; do target/release/sat-solver "$f"; done' 'for f in inputs/uf50-218/*.cnf2; do minisat -verb=0 "$f"; done; exit 0'
 Benchmark 1: for f in inputs/uf50-218/*.cnf2; do target/release/sat-solver "$f"; done
-  Time (mean ± σ):      4.707 s ±  0.741 s    [User: 3.399 s, System: 1.288 s]
-  Range (min … max):    3.620 s …  5.644 s    10 runs
+  Time (mean ± σ):      3.823 s ±  0.458 s    [User: 2.744 s, System: 1.056 s]
+  Range (min … max):    3.040 s …  4.528 s    10 runs
  
 Benchmark 2: for f in inputs/uf50-218/*.cnf2; do minisat -verb=0 "$f"; done; exit 0
-  Time (mean ± σ):      4.740 s ±  1.321 s    [User: 2.530 s, System: 2.185 s]
-  Range (min … max):    3.240 s …  6.853 s    10 runs
+  Time (mean ± σ):      4.643 s ±  1.227 s    [User: 2.557 s, System: 2.061 s]
+  Range (min … max):    3.324 s …  7.241 s    10 runs
  
 Summary
   for f in inputs/uf50-218/*.cnf2; do target/release/sat-solver "$f"; done ran
-    1.01 ± 0.32 times faster than for f in inputs/uf50-218/*.cnf2; do minisat -verb=0 "$f"; done; exit 0
+    1.21 ± 0.35 times faster than for f in inputs/uf50-218/*.cnf2; do minisat -verb=0 "$f"; done; exit 0
 ```
-
-1000 instances, 50 variables, 218 clauses, all UNSAT
+Uniform Random-3-SAT: 50 variables, 218 clauses - 1000 instances, all UNSAT
 ```
-robert@robert-7590:~/dev/sat-solver$ hyperfine 'for f in inputs/uuf50-218/*.cnf2; do target/release/sat-solver "$f"; done' 'for f in inputs/uuf50-218/*.cnf2; do minisat -verb=0 "$f"; done; exit 0'
 Benchmark 1: for f in inputs/uuf50-218/*.cnf2; do target/release/sat-solver "$f"; done
-  Time (mean ± σ):      4.464 s ±  0.462 s    [User: 3.691 s, System: 0.750 s]
-  Range (min … max):    3.668 s …  5.108 s    10 runs
+  Time (mean ± σ):      5.227 s ±  0.745 s    [User: 4.140 s, System: 1.067 s]
+  Range (min … max):    4.160 s …  6.787 s    10 runs
  
 Benchmark 2: for f in inputs/uuf50-218/*.cnf2; do minisat -verb=0 "$f"; done; exit 0
-  Time (mean ± σ):      4.409 s ±  0.587 s    [User: 2.511 s, System: 1.872 s]
-  Range (min … max):    3.783 s …  5.338 s    10 runs
+  Time (mean ± σ):      4.466 s ±  0.751 s    [User: 2.520 s, System: 1.921 s]
+  Range (min … max):    3.442 s …  5.747 s    10 runs
  
 Summary
   for f in inputs/uuf50-218/*.cnf2; do minisat -verb=0 "$f"; done; exit 0 ran
-    1.01 ± 0.17 times faster than for f in inputs/uuf50-218/*.cnf2; do target/release/sat-solver "$f"; done
+    1.17 ± 0.26 times faster than for f in inputs/uuf50-218/*.cnf2; do target/release/sat-solver "$f"; done
+```
+Uniform Random-3-SAT: 150 variables, 645 clauses - 100 instances, all SAT
+```
+Benchmark 1: for f in inputs/uf150-645/*.cnf2; do target/release/sat-solver "$f"; done
+  Time (mean ± σ):     100.024 s ±  0.086 s    [User: 99.883 s, System: 0.133 s]
+  Range (min … max):   99.928 s … 100.094 s    3 runs
+ 
+Benchmark 2: for f in inputs/uf150-645/*.cnf2; do minisat -verb=0 "$f"; done; exit 0
+  Time (mean ± σ):      1.198 s ±  0.002 s    [User: 1.001 s, System: 0.195 s]
+  Range (min … max):    1.196 s …  1.200 s    3 runs
+ 
+Summary
+  for f in inputs/uf150-645/*.cnf2; do minisat -verb=0 "$f"; done; exit 0 ran
+   83.47 ± 0.17 times faster than for f in inputs/uf150-645/*.cnf2; do target/release/sat-solver "$f"; done
+```
+Uniform Random-3-SAT: 150 variables, 645 clauses - 100 instances, all UNSAT
+```
+Benchmark 1: for f in inputs/uuf150-645/*.cnf2; do target/release/sat-solver "$f"; done
+  Time (mean ± σ):     377.046 s ±  0.161 s    [User: 376.811 s, System: 0.208 s]
+  Range (min … max):   376.868 s … 377.183 s    3 runs
+ 
+Benchmark 2: for f in inputs/uuf150-645/*.cnf2; do minisat -verb=0 "$f"; done; exit 0
+  Time (mean ± σ):      2.574 s ±  0.005 s    [User: 2.354 s, System: 0.217 s]
+  Range (min … max):    2.570 s …  2.580 s    3 runs
+ 
+Summary
+  for f in inputs/uuf150-645/*.cnf2; do minisat -verb=0 "$f"; done; exit 0 ran
+  146.49 ± 0.31 times faster than for f in inputs/uuf150-645/*.cnf2; do target/release/sat-solver "$f"; done
 ```
