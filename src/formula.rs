@@ -5,7 +5,11 @@ pub struct Variable(NonZeroI32);
 
 impl Variable {
     pub fn index(self) -> usize {
-        self.0.get().abs() as usize
+        self.0.get() as usize
+    }
+
+    pub fn literal(self, sign: bool) -> Literal {
+        Literal(if sign { self.0 } else { -self.0 })
     }
 }
 

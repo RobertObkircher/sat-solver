@@ -78,11 +78,21 @@ enum Conflict {
 /// - each node has a label l@d for a literal l
 /// - E = {(v_i, v_j)}, directed to v_j, labeled with Antecedent(v_j)
 /// - In case G is a conflict graph, it also contains a single conflict
-//    node with incoming edges labeled with clause c.
+///    node with incoming edges labeled with clause c.
+///
+/// The data is essentially `Map<Variable, (Sign, Level, Antecedent)>`
+/// but it is split into two arrays for possibly better caching.
 struct ImplicationGraph {
     // TODO pack two into one byte?
     values: Vec<Option<bool>>,
     nodes: Vec<ImplicationNode>,
+    /// Stores the variables for backtracking. The sign indicates
+    /// whether a decision was made, so backtracking doesn't have
+    /// to fetch the level from the `node` array.
+    ///
+    /// On "p cnf 50  218" this only gave a minor improvement over
+    /// simple iteration through all nodes.
+    backtrack_stack: Vec<Literal>,
 }
 
 impl ImplicationGraph {
@@ -93,6 +103,7 @@ impl ImplicationGraph {
                 level: 0,
                 antecedent: Antecedent::Decision,
             }).collect(),
+            backtrack_stack: Vec::with_capacity(variable_count),
         }
     }
 
@@ -104,6 +115,7 @@ impl ImplicationGraph {
             level,
             antecedent,
         };
+        self.backtrack_stack.push(literal.variable().literal(matches!(antecedent, Antecedent::Decision)));
     }
 
     /// Returns the index and the literal with the highest decision level.
@@ -177,6 +189,7 @@ struct ImplicationNode {
     antecedent: Antecedent,
 }
 
+#[derive(Debug, Copy, Clone)]
 enum Antecedent {
     Decision,
     /// The actual edges are the other literals in the clause.
@@ -237,19 +250,20 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: usize, implicatio
 
 /// Backtrack until no conflict occurs any more. Return false, if this is impossible
 fn resolve_conflict(conflict_clause: usize, formula: &mut CnfFormula, implications: &mut ImplicationGraph, level: &mut usize) -> bool {
+    let mut decision_level = *level;
     let result = analyze_conflict(conflict_clause, implications, formula, level);
     if result {
-        // TODO find a smarter way to do this (either during analyze_conflict or on maybe check level on each read
-        for (i, node) in implications.nodes.iter().enumerate() {
-            if node.level > *level {
-                implications.values[i] = None;
+        while decision_level > *level {
+            let next = implications.backtrack_stack.pop().unwrap();
+            debug_assert_eq!(implications.nodes[next.variable().index()].level, decision_level);
+            if next.value() {
+                decision_level -= 1;
             }
-        }
-        #[cfg(debug_assertions)]
-        {
-            implications.nodes.iter_mut()
-                .filter(|it| it.level > *level)
-                .for_each(|it| it.level = 0);
+            implications.values[next.variable().index()] = None;
+            #[cfg(debug_assertions)]
+            {
+                implications.nodes[next.variable().index()].level = 0;
+            }
         }
     }
     result
