@@ -14,14 +14,7 @@ fn main() {
         process::exit(1);
     });
 
-    // TODO figure out why the files from a website end with '%' and '0' as the last two lines.
-    let source = if let Some((start, _)) = contents.rsplit_once('%') {
-        start
-    } else {
-        &contents
-    };
-
-    let formula = parse_dimacs_cnf(source).unwrap_or_else(|e| {
+    let formula = parse_dimacs_cnf(&contents).unwrap_or_else(|e| {
         eprintln!("Parse error: {}", e);
         process::exit(1);
     });

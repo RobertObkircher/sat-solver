@@ -76,14 +76,8 @@ fn uf50_218() {
         let entry = x.unwrap();
         println!("{}", entry.file_name().to_string_lossy());
 
-        let contents = std::fs::read_to_string(entry.path()).unwrap();
-        // TODO figure out why the files from a website end with '%' and '0' as the last two lines.
-        let source = if let Some((start, _)) = contents.rsplit_once('%') {
-            start
-        } else {
-            &contents
-        };
-        let result = parse_dimacs_cnf(&source).unwrap();
+        let contents = fs::read_to_string(entry.path()).unwrap();
+        let result = parse_dimacs_cnf(&contents).unwrap();
         let result = sat(result);
         assert_eq!(result, Satisfiable::Yes);
     });
@@ -95,14 +89,8 @@ fn uuf50_218() {
         let entry = x.unwrap();
         println!("{}", entry.file_name().to_string_lossy());
 
-        let contents = std::fs::read_to_string(entry.path()).unwrap();
-        // TODO figure out why the files from a website end with '%' and '0' as the last two lines.
-        let source = if let Some((start, _)) = contents.rsplit_once('%') {
-            start
-        } else {
-            &contents
-        };
-        let result = parse_dimacs_cnf(&source).unwrap();
+        let contents = fs::read_to_string(entry.path()).unwrap();
+        let result = parse_dimacs_cnf(&contents).unwrap();
         let result = sat(result);
         assert_eq!(result, Satisfiable::No);
     });
