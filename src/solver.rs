@@ -15,17 +15,11 @@ pub fn sat(mut formula: CnfFormula, stats: &mut Statistics) -> Satisfiable {
     // 2 = first real decision
     let mut level = 1u32; // u32 is enough because there at most one level per variable
 
+    let mut pure_literals = vec![None; formula.variable_count + 1];
+
     // make initial decisions
-    for c in formula.clauses().filter(|it| it.len() == 1) {
-        if implications.values[c[0].variable().index()] == Some(c[0].negated().value()) {
-            return Satisfiable::No;
-        }
-        implications.add_node(c[0], level, Antecedent::Decision);
-    }
-    if !implications.backtrack_stack.is_empty() {
-        if let Conflict::Yes(_) = boolean_constraint_propagation(&formula, level, &mut implications) {
-            return Satisfiable::No;
-        }
+    if let Conflict::Yes(_) = boolean_constraint_propagation(&formula, level, &mut implications, stats, &mut pure_literals) {
+        return Satisfiable::No;
     }
 
     // VSIDS: Variable State Independent Decaying Sum
@@ -37,7 +31,7 @@ pub fn sat(mut formula: CnfFormula, stats: &mut Statistics) -> Satisfiable {
             level += 1;
             implications.add_node(literal, level, Antecedent::Decision);
 
-            while let Conflict::Yes(conflict_clause) = boolean_constraint_propagation(&formula, level, &mut implications) {
+            while let Conflict::Yes(conflict_clause) = boolean_constraint_propagation(&formula, level, &mut implications, stats, &mut pure_literals) {
                 for l in formula.get_clause(conflict_clause) {
                     if vsids[l.variable().index()] == 255 {
                         // TODO does it matter that this isn't entirely fair?
@@ -247,13 +241,14 @@ enum ClauseStatus {
 /// is used to keep track of the changes.
 ///
 /// Apply repeatedly the unit rule. Return false if a conflict is reached
-fn boolean_constraint_propagation(formula: &CnfFormula, level: u32, implications: &mut ImplicationGraph) -> Conflict {
+fn boolean_constraint_propagation(formula: &CnfFormula, level: u32, implications: &mut ImplicationGraph, stats: &mut Statistics, pure_literals: &mut Vec<Option<Option<bool>>>) -> Conflict {
     let mut break_after_index = 0;
     // NOTE: Previously we eagerly checked all clauses for conflicts before any unit propagation.
     //       This version is much faster (4x on p cnf 50  218), despite potentially causing multiple conflicts.
     //       Visiting them in reverse order, to immediately try learned clauses after backtracking,
     //       also made small instances faster, but it slightly slowed down p cnf 150  645.
     // TODO: although not covered in the course, something like 2-watched literals could make this even faster
+    pure_literals.fill(None);
     loop {
         for (index, c) in formula.clauses().enumerate().rev() {
             match implications.evaluate_clause(c) {
@@ -264,11 +259,35 @@ fn boolean_constraint_propagation(formula: &CnfFormula, level: u32, implications
                 ClauseStatus::Unit(literal) => {
                     implications.add_node(literal, level, Antecedent::Clause(index));
                     break_after_index = index;
+                    pure_literals.fill(None);
                     continue;
                 }
-                ClauseStatus::Unresolved => {}
+                ClauseStatus::Unresolved => {
+                    for &l in c {
+                        let new = match pure_literals[l.variable().index()] {
+                            None => Some(Some(l.value())),
+                            Some(s) => Some(s.clone().filter(|&it| it == l.value())),
+                        };
+                        pure_literals[l.variable().index()] = new;
+                    }
+                }
             }
-            if break_after_index == index { return Conflict::No; }
+            if break_after_index == index {
+                for (i, s) in pure_literals.iter().enumerate() {
+                    if let Some(Some(sign)) = s {
+                        let var = i as i32;
+                        let lit = Literal::try_from(if *sign { var } else { -var }).unwrap();
+                        if implications.values[lit.variable().index()].is_none() {
+                            stats.pure_literals += 1;
+                            implications.add_node(lit, level, Antecedent::Decision);
+                            let ugly_hack = implications.backtrack_stack.pop().unwrap().negated();
+                            implications.backtrack_stack.push( ugly_hack);
+                        }
+                    }
+                }
+
+                return Conflict::No;
+            }
         }
     }
 }
