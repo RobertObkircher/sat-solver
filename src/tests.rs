@@ -122,3 +122,18 @@ fn eliminate_x_or_not_x() {
     assert_eq!(result.literals.len(), 0);
     eprintln!("{stats:?}");
 }
+
+const ELIMINATE_X_OR_X: &str = "c Elimination
+p cnf 2 2
+1 2 1 0
+2 1 2 0
+";
+
+#[test]
+fn eliminate_x_or_x() {
+    let mut stats = Statistics::default();
+    let result = parse_dimacs_cnf(ELIMINATE_X_OR_X, &mut stats).unwrap();
+    assert_eq!(stats.eliminated_x_or_x_literals, 2);
+    assert_eq!(result.literals.len(), 4);
+    eprintln!("{stats:?}");
+}

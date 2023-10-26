@@ -2,10 +2,11 @@ use std::num::NonZeroI32;
 use std::time::Instant;
 
 use crate::formula::{CnfFormula, Literal};
+use crate::simp::simplify_new_clause;
 use crate::statistics::Statistics;
 
 pub fn parse_dimacs_cnf(source: &str, stats: &mut Statistics) -> Result<CnfFormula, String> {
-    let mut start_instant = Instant::now();
+    let start_instant = Instant::now();
 
     let mut lines = source.lines().enumerate();
     let mut comments = Vec::new();
@@ -63,15 +64,10 @@ pub fn parse_dimacs_cnf(source: &str, stats: &mut Statistics) -> Result<CnfFormu
                     literals.push(Literal::try_from(nr.get()).unwrap());
                 } else {
                     parsed_clauses += 1;
-
-                    let clause = &mut literals[start..];
-                    // PERFORMANCE: sorting and checking neighbours took parsing of
+                    // PERFORMANCE: sorting and checking tautological neighbours took parsing of
                     // 1000 instances, 50 variables, 218 clauses, 3-sat from 30 to 41 milliseconds.
-                    clause.sort_by_key(|it| it.variable().index());
-                    if clause.windows(2).any(|it| it[0] == it[1].negated()) {
-                        stats.eliminated_x_or_not_x_clauses += 1;
-                        literals.truncate(start);
-                    } else {
+                    simplify_new_clause(start, &mut literals, stats);
+                    if literals.len() > start {
                         clauses.push(literals.len());
                         start = literals.len();
                     }
