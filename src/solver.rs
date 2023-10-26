@@ -1,4 +1,5 @@
 use crate::formula::{CnfFormula, Literal};
+use crate::statistics::Statistics;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Satisfiable {
@@ -7,7 +8,7 @@ pub enum Satisfiable {
 }
 
 
-pub fn sat(mut formula: CnfFormula) -> Satisfiable {
+pub fn sat(mut formula: CnfFormula, stats: &mut Statistics) -> Satisfiable {
     let mut implications = ImplicationGraph::new(formula.variable_count);
     // 0 = uninitialized
     // 1 = "forced" initial decisions

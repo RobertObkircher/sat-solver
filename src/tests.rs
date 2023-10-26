@@ -32,7 +32,7 @@ fn parse_sat() {
     assert_eq!(clauses[0], [Literal::try_from(1).unwrap()]);
     assert_eq!(clauses[1], [Literal::try_from(-1).unwrap(), Literal::try_from(2).unwrap(), Literal::try_from(3).unwrap()]);
 
-    let result = sat(result);
+    let result = sat(result, &mut stats);
     assert_eq!(result, Satisfiable::Yes);
     eprintln!("{stats:?}");
 }
@@ -49,7 +49,7 @@ fn parse_unsat() {
     assert_eq!(clauses[2], [Literal::try_from(2).unwrap()]);
     assert_eq!(clauses[3], [Literal::try_from(-2).unwrap()]);
 
-    let result = sat(result);
+    let result = sat(result, &mut stats);
     assert_eq!(result, Satisfiable::No);
     eprintln!("{stats:?}");
 }
@@ -72,7 +72,7 @@ fn slides_sat() {
     let clauses = result.clauses().collect::<Vec<&[Literal]>>();
     assert_eq!(clauses.len(), 6);
 
-    let result = sat(result);
+    let result = sat(result, &mut stats);
     assert_eq!(result, Satisfiable::Yes);
     eprintln!("{stats:?}");
 }
@@ -86,7 +86,7 @@ fn uf50_218() {
 
         let contents = fs::read_to_string(entry.path()).unwrap();
         let result = parse_dimacs_cnf(&contents, &mut stats).unwrap();
-        let result = sat(result);
+        let result = sat(result, &mut stats);
         assert_eq!(result, Satisfiable::Yes);
     });
     eprintln!("{stats:?}");
@@ -101,7 +101,7 @@ fn uuf50_218() {
 
         let contents = fs::read_to_string(entry.path()).unwrap();
         let result = parse_dimacs_cnf(&contents, &mut stats).unwrap();
-        let result = sat(result);
+        let result = sat(result, &mut stats);
         assert_eq!(result, Satisfiable::No);
     });
     eprintln!("{stats:?}");

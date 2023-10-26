@@ -20,7 +20,7 @@ fn main() {
         eprintln!("Parse error: {}", e);
         process::exit(1);
     });
-    let result = sat(formula);
+    let result = sat(formula, &mut stats);
     match result {
         Satisfiable::Yes => { println!("SAT"); }
         Satisfiable::No => { println!("UNSAT"); }
