@@ -1,8 +1,12 @@
 use std::num::NonZeroI32;
+use std::time::Instant;
 
 use crate::formula::{CnfFormula, Literal};
+use crate::statistics::Statistics;
 
-pub fn parse_dimacs_cnf(source: &str) -> Result<CnfFormula, String> {
+pub fn parse_dimacs_cnf(source: &str, stats: &mut Statistics) -> Result<CnfFormula, String> {
+    let mut start_instant = Instant::now();
+
     let mut lines = source.lines().enumerate();
     let mut comments = Vec::new();
 
@@ -38,8 +42,10 @@ pub fn parse_dimacs_cnf(source: &str) -> Result<CnfFormula, String> {
         return Err("Could not find header starting with 'p'".to_string());
     };
 
+    let mut start = 0;
     let mut literals = Vec::new();
     let mut clauses = Vec::with_capacity(n_clauses);
+    let mut parsed_clauses = 0;
 
     // parse literals
     for (i, line) in lines {
@@ -56,13 +62,27 @@ pub fn parse_dimacs_cnf(source: &str) -> Result<CnfFormula, String> {
                     }
                     literals.push(Literal::try_from(nr.get()).unwrap());
                 } else {
-                    clauses.push(literals.len());
+                    parsed_clauses += 1;
+
+                    let clause = &mut literals[start..];
+                    // PERFORMANCE: sorting and checking neighbours took parsing of
+                    // 1000 instances, 50 variables, 218 clauses, 3-sat from 30 to 41 milliseconds.
+                    clause.sort_by_key(|it| it.variable().index());
+                    if clause.windows(2).any(|it| it[0] == it[1].negated()) {
+                        stats.eliminated_x_or_not_x_clauses += 1;
+                        literals.truncate(start);
+                    } else {
+                        clauses.push(literals.len());
+                        start = literals.len();
+                    }
                 }
             }
         }
     }
 
-    if clauses.len() != n_clauses {
+    stats.parse_duration += start_instant.elapsed();
+
+    if parsed_clauses != n_clauses {
         Err(format!("Parsed {} clauses but expected {n_clauses} from the header", clauses.len()))
     } else {
         Ok(CnfFormula {

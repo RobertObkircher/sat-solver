@@ -2,6 +2,7 @@ use std::{env, fs, process};
 
 use sat_solver::dimacs::parse_dimacs_cnf;
 use sat_solver::solver::{sat, Satisfiable};
+use sat_solver::statistics::Statistics;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -14,7 +15,8 @@ fn main() {
         process::exit(1);
     });
 
-    let formula = parse_dimacs_cnf(&contents).unwrap_or_else(|e| {
+    let mut stats = Statistics::default();
+    let formula = parse_dimacs_cnf(&contents, &mut stats).unwrap_or_else(|e| {
         eprintln!("Parse error: {}", e);
         process::exit(1);
     });
@@ -23,4 +25,5 @@ fn main() {
         Satisfiable::Yes => { println!("SAT"); }
         Satisfiable::No => { println!("UNSAT"); }
     }
+    eprintln!("{stats:?}");
 }
