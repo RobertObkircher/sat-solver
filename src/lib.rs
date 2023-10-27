@@ -4,3 +4,4 @@ pub mod solver;
 mod tests;
 pub mod statistics;
 mod simp;
+mod watcher;

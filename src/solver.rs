@@ -1,5 +1,6 @@
-use crate::formula::{CnfFormula, Literal};
+use crate::formula::{CnfFormula, Literal, Variable};
 use crate::statistics::Statistics;
+use crate::watcher::TwoWatchedLiterals;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Satisfiable {
@@ -15,15 +16,22 @@ pub fn sat(mut formula: CnfFormula, stats: &mut Statistics) -> Satisfiable {
     // 2 = first real decision
     let mut level = 1u32; // u32 is enough because there at most one level per variable
 
-    // make initial decisions
+    let mut twl = TwoWatchedLiterals::new(formula.variable_count, formula.clauses.len());
+    for (i, c) in formula.clauses().enumerate() {
+        implications.watch(i, c, &mut twl);
+    }
+
     for c in formula.clauses().filter(|it| it.len() == 1) {
         if implications.values[c[0].variable().index()] == Some(c[0].negated().value()) {
             return Satisfiable::No;
         }
         implications.add_node(c[0], level, Antecedent::Decision);
+        twl.enqueue(c[0].variable());
     }
+
+    // propagate initial decisions
     if !implications.backtrack_stack.is_empty() {
-        if let Conflict::Yes(_) = boolean_constraint_propagation(&formula, level, &mut implications) {
+        if let Conflict::Yes(_) = boolean_constraint_propagation(&formula, level, &mut implications, &mut twl) {
             return Satisfiable::No;
         }
     }
@@ -36,8 +44,9 @@ pub fn sat(mut formula: CnfFormula, stats: &mut Statistics) -> Satisfiable {
         if let Some(literal) = decide(&implications, &vsids) {
             level += 1;
             implications.add_node(literal, level, Antecedent::Decision);
+            twl.enqueue(literal.variable());
 
-            while let Conflict::Yes(conflict_clause) = boolean_constraint_propagation(&formula, level, &mut implications) {
+            while let Conflict::Yes(conflict_clause) = boolean_constraint_propagation(&formula, level, &mut implications, &mut twl) {
                 for l in formula.get_clause(conflict_clause) {
                     if vsids[l.variable().index()] == 255 {
                         // TODO does it matter that this isn't entirely fair?
@@ -46,7 +55,7 @@ pub fn sat(mut formula: CnfFormula, stats: &mut Statistics) -> Satisfiable {
                     vsids[l.variable().index()] += 1;
                 }
                 let from_level = level;
-                if !analyze_conflict(conflict_clause, &mut implications, &mut formula, &mut level) {
+                if !analyze_conflict(conflict_clause, &mut implications, &mut formula, &mut level, &mut twl) {
                     return Satisfiable::No;
                 }
                 conflicts += 1;
@@ -208,6 +217,33 @@ impl ImplicationGraph {
             }
         }
     }
+
+    /// prefer satisfied over unassigned over unsatisfied
+    pub fn find_watchable_literal(&self, clause: &[Literal], exclude: &[Variable]) -> Option<Literal> {
+        let mut second = None;
+        let mut third = None;
+
+        for &l in clause.iter().filter(|it| !exclude.contains(&it.variable())) {
+            match self.values[l.variable().index()] {
+                Some(x) if x == l.value() => { return Some(l); }
+                None => { second = Some(l); }
+                _ => { third = Some(l); }
+            }
+        }
+        second.or(third)
+    }
+
+    pub fn watch(&self, clause_index: usize, clause: &[Literal], twl: &mut TwoWatchedLiterals) {
+        if let Some(first) = self.find_watchable_literal(clause, &[]) {
+            if let Some(second) = self.find_watchable_literal(clause, &[first.variable()]) {
+                twl.add_clause(clause_index, (first, second));
+            } else {
+                twl.add_dummy_clause();
+            }
+        } else {
+            twl.add_dummy_clause();
+        }
+    }
 }
 
 const _: [u8; 16] = [0; std::mem::size_of::<ImplicationNode>()];
@@ -247,41 +283,63 @@ enum ClauseStatus {
 /// is used to keep track of the changes.
 ///
 /// Apply repeatedly the unit rule. Return false if a conflict is reached
-fn boolean_constraint_propagation(formula: &CnfFormula, level: u32, implications: &mut ImplicationGraph) -> Conflict {
-    let mut break_after_index = 0;
-    // NOTE: Previously we eagerly checked all clauses for conflicts before any unit propagation.
-    //       This version is much faster (4x on p cnf 50  218), despite potentially causing multiple conflicts.
-    //       Visiting them in reverse order, to immediately try learned clauses after backtracking,
-    //       also made small instances faster, but it slightly slowed down p cnf 150  645.
-    // TODO: although not covered in the course, something like 2-watched literals could make this even faster
-    loop {
-        for (index, c) in formula.clauses().enumerate().rev() {
+fn boolean_constraint_propagation(formula: &CnfFormula, level: u32, implications: &mut ImplicationGraph, twl: &mut TwoWatchedLiterals) -> Conflict {
+    while let Some(clause_index) = twl.new_asserting_clauses.pop_front() {
+        let c = formula.get_clause(clause_index);
+        // should be unit, or unresolved after random restart
+        match implications.evaluate_clause(c) {
+            ClauseStatus::Satisfied => {
+                debug_assert!(false);
+            }
+            ClauseStatus::Unsatisfied => {
+                debug_assert!(false);
+                return Conflict::Yes(clause_index);
+            }
+            ClauseStatus::Unit(literal) => {
+                implications.add_node(literal, level, Antecedent::Clause(clause_index));
+                twl.enqueue(literal.variable());
+            }
+            ClauseStatus::Unresolved => {}
+        }
+    }
+
+    while let Some(variable) = twl.next_in_queue() {
+        let mut twl_index = 0;
+        while let Some((clause_index, this_watcher, other_watcher)) = twl.get(variable, twl_index) {
+            let c = formula.get_clause(clause_index);
             match implications.evaluate_clause(c) {
                 ClauseStatus::Satisfied => {}
                 ClauseStatus::Unsatisfied => {
-                    return Conflict::Yes(index);
+                    return Conflict::Yes(clause_index);
                 }
                 ClauseStatus::Unit(literal) => {
-                    implications.add_node(literal, level, Antecedent::Clause(index));
-                    break_after_index = index;
-                    continue;
+                    implications.add_node(literal, level, Antecedent::Clause(clause_index));
+                    twl.enqueue(literal.variable());
                 }
-                ClauseStatus::Unresolved => {}
+                ClauseStatus::Unresolved => {
+                    // in this case we know that our literal has been set to false
+                    if let Some(better) = implications.find_watchable_literal(c, &[this_watcher.variable(), other_watcher.variable()]) {
+                        twl.move_clause(clause_index, this_watcher, better);
+                    }
+                }
             }
-            if break_after_index == index { return Conflict::No; }
+            twl_index += 1;
         }
     }
+    Conflict::No
 }
 
 /// Output: BT level and new conflict clause
-fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, formula: &mut CnfFormula, level: &mut u32) -> bool {
+fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, formula: &mut CnfFormula, level: &mut u32, twl: &mut TwoWatchedLiterals) -> bool {
     debug_assert!(*level != 0);
     if *level <= 1 {
         return false;
     }
 
     let mut cl = formula.get_clause(conflict_clause).to_vec();
+    let mut new = false;
     while !is_asserting(&cl, implications, *level) {
+        new = true;
         let (i, lit) = implications.last_assigned_literal(&cl).unwrap();
         let var = lit.variable();
         debug_assert_eq!(implications.nodes[var.index()].level, *level);
@@ -301,13 +359,19 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
     }
 
     *level = implications.clause_asserting_level(&cl);
-
-    // add-clause-to-database
-    for l in cl {
-        formula.literals.push(l);
+    if new {
+        // add-clause-to-database
+        implications.watch(formula.clauses.len(), &cl, twl);
+        assert!(twl.new_asserting_clauses.is_empty(), "at the moment we should only do this once per conflict");
+        twl.new_asserting_clauses.push_back(formula.clauses.len()); // ensure that the learned value is propagated first
+        for l in cl {
+            formula.literals.push(l);
+        }
+        formula.clauses.push(formula.literals.len());
+    } else {
+        assert!(twl.new_asserting_clauses.is_empty(), "at the moment we should only do this once per conflict");
+        twl.new_asserting_clauses.push_back(conflict_clause); // ensure that the learned value is propagated first
     }
-    formula.clauses.push(formula.literals.len());
-
     return true;
 }
 
