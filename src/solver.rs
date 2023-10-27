@@ -280,7 +280,9 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
     }
 
     let mut cl = formula.get_clause(conflict_clause).to_vec();
+    let mut new = false;
     while !is_asserting(&cl, implications, *level) {
+        new = true;
         let (i, lit) = implications.last_assigned_literal(&cl).unwrap();
         let var = lit.variable();
         debug_assert_eq!(implications.nodes[var.index()].level, *level);
@@ -301,11 +303,13 @@ fn analyze_conflict(conflict_clause: usize, implications: &ImplicationGraph, for
 
     *level = implications.clause_asserting_level(&cl);
 
-    // add-clause-to-database
-    for l in cl {
-        formula.literals.push(l);
+    if new {
+        // add-clause-to-database
+        for l in cl {
+            formula.literals.push(l);
+        }
+        formula.clauses.push(formula.literals.len());
     }
-    formula.clauses.push(formula.literals.len());
 
     return true;
 }
